@@ -1,0 +1,44 @@
+# Environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+
+# Node
+node_modules/
+.next/
+out/
+dist/
+
+# Uploads / generated files
+backend/uploads/
+uploads/
+
+# YOLO training outputs
+runs/
+checkpoints/
+
+# Dataset
+dataset/
+
+# Model weights
+*.pt
+*.onnx
+*.weights
+
+# Archives
+*.zip
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
