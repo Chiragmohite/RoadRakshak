@@ -59,7 +59,7 @@ class DetectorService:
     def __init__(
         self,
         model_path: str,
-        confidence_threshold: float = 0.25,
+        confidence_threshold: float = 0.15,
     ):
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
@@ -210,7 +210,7 @@ class DetectorService:
     @staticmethod
     def _preprocess_image(
         image_path: str,
-        image_size: int = 640,
+        image_size: int = 320,
     ):
         """
         Load and preprocess image for YOLO ONNX.
@@ -320,7 +320,7 @@ class DetectorService:
                 pad_y,
             ) = self._preprocess_image(
                 image_path,
-                image_size=640,
+                image_size=320,
             )
 
             # Run ONNX inference.
