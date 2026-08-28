@@ -210,7 +210,7 @@ class DetectorService:
     @staticmethod
     def _preprocess_image(
         image_path: str,
-        image_size: int = 320,
+        image_size: int = 640,
     ):
         """
         Load and preprocess image for YOLO ONNX.
@@ -320,7 +320,7 @@ class DetectorService:
                 pad_y,
             ) = self._preprocess_image(
                 image_path,
-                image_size=320,
+                image_size=640,
             )
 
             # Run ONNX inference.
