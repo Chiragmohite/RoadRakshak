@@ -12,14 +12,25 @@ class Config:
     """Base configuration."""
 
     # Flask
-    SECRET_KEY = os.environ.get("SECRET_KEY", "roadrakshak-dev-secret-change-in-prod")
+    SECRET_KEY = os.environ.get(
+        "SECRET_KEY",
+        "roadrakshak-dev-secret-change-in-prod"
+    )
 
     # Database
     db_file = (BASE_DIR / "database" / "roadrakshak.db").as_posix()
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        f"sqlite:///{db_file}"
-    )
+
+    database_url = os.environ.get("DATABASE_URL")
+
+    # Render/PostgreSQL compatibility
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace(
+            "postgres://",
+            "postgresql://",
+            1
+        )
+
+    SQLALCHEMY_DATABASE_URI = database_url or f"sqlite:///{db_file}"
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
     # JWT
