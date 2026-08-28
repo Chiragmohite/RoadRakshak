@@ -31,7 +31,7 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max upload
 
     # AI Model
-    MODEL_PATH = str(BASE_DIR / "models" / "best.pt")
+    MODEL_PATH = str(BASE_DIR / "models" / "best.onnx")
     DETECTION_CONFIDENCE_THRESHOLD = 0.25
 
     # Duplicate clustering

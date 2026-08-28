@@ -1,12 +1,12 @@
 """
 RoadRakshak — AI Detector Service
 
-Interchangeable Ultralytics YOLO inference service.
+Low-memory ONNX Runtime inference service for Render.
 
-- When backend/models/best.pt exists → real YOLO inference
-- When best.pt is absent/unavailable → clearly-labelled DEMO fallback
+Uses:
+    backend/models/best.onnx
 
-Designed for low-memory CPU deployment on Render.
+Falls back to demo mode if the ONNX model/runtime is unavailable.
 """
 
 import gc
@@ -15,20 +15,20 @@ import random
 import uuid
 from pathlib import Path
 
+import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 
-# Try to import Ultralytics.
 try:
-    from ultralytics import YOLO
+    import onnxruntime as ort
 
-    ULTRALYTICS_AVAILABLE = True
+    ONNX_AVAILABLE = True
 except ImportError:
-    YOLO = None
-    ULTRALYTICS_AVAILABLE = False
+    ort = None
+    ONNX_AVAILABLE = False
 
 
 # ---------------------------------------------------------------------------
-# Damage class labels
+# Damage classes
 # ---------------------------------------------------------------------------
 
 DAMAGE_CLASSES = {
@@ -41,6 +41,7 @@ DAMAGE_CLASSES = {
 DEMO_DAMAGE_TYPES = list(DAMAGE_CLASSES.values())
 
 CRACK_MIN_CONFIDENCE = 0.55
+
 CRACK_CLASSES = {
     "Longitudinal Crack",
     "Transverse Crack",
@@ -49,13 +50,10 @@ CRACK_CLASSES = {
 
 class DetectorService:
     """
-    Unified detector interface.
+    Road damage detector using ONNX Runtime.
 
-    Uses one YOLO model instance and CPU inference.
-
-    Usage:
-        detector = DetectorService(model_path, confidence_threshold)
-        result = detector.detect(image_path, save_dir)
+    ONNX Runtime is used instead of PyTorch/Ultralytics during inference
+    to reduce RAM usage on low-memory Render instances.
     """
 
     def __init__(
@@ -66,8 +64,11 @@ class DetectorService:
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
 
-        self.model = None
+        self.session = None
         self.is_real = False
+
+        self.input_name = None
+        self.input_shape = None
 
         self._try_load_model()
 
@@ -76,93 +77,126 @@ class DetectorService:
     # ------------------------------------------------------------------
 
     def _try_load_model(self):
-        """Attempt to load the YOLO model from disk."""
+        """Load the ONNX model once."""
+
+        if not ONNX_AVAILABLE:
+            print(
+                "[DetectorService] ONNX Runtime is not installed. "
+                "Using demo mode."
+            )
+            return
 
         if not os.path.exists(self.model_path):
             print(
-                f"[DetectorService] Model not found: {self.model_path}"
+                f"[DetectorService] ONNX model not found: "
+                f"{self.model_path}"
             )
-            self.is_real = False
-            return
-
-        if not ULTRALYTICS_AVAILABLE:
-            print(
-                "[DetectorService] WARNING: best.pt found but "
-                "ultralytics is not installed. Using demo mode."
-            )
-            self.is_real = False
             return
 
         try:
             print(
-                f"[DetectorService] Loading YOLO model: "
+                f"[DetectorService] Loading ONNX model: "
                 f"{self.model_path}"
             )
 
-            # Load the model exactly once.
-            self.model = YOLO(self.model_path)
+            # CPU-only ONNX Runtime.
+            session_options = ort.SessionOptions()
 
-            # Force CPU.
-            try:
-                self.model.to("cpu")
-            except Exception as exc:
-                print(
-                    f"[DetectorService] CPU device setup warning: {exc}"
+            # Reduce memory overhead.
+            session_options.intra_op_num_threads = 1
+            session_options.inter_op_num_threads = 1
+
+            # Basic graph optimization.
+            session_options.graph_optimization_level = (
+                ort.GraphOptimizationLevel.ORT_ENABLE_BASIC
+            )
+
+            self.session = ort.InferenceSession(
+                self.model_path,
+                sess_options=session_options,
+                providers=["CPUExecutionProvider"],
+            )
+
+            inputs = self.session.get_inputs()
+
+            if not inputs:
+                raise RuntimeError(
+                    "ONNX model has no input tensors."
                 )
+
+            self.input_name = inputs[0].name
+            self.input_shape = inputs[0].shape
 
             self.is_real = True
 
             print(
-                f"[DetectorService] Loaded REAL model from "
+                "[DetectorService] Loaded REAL ONNX model from "
                 f"{self.model_path}"
+            )
+
+            print(
+                f"[DetectorService] Input: "
+                f"{self.input_name} {self.input_shape}"
             )
 
         except Exception as exc:
             print(
-                f"[DetectorService] Failed to load model: {exc}"
+                "[DetectorService] Failed to load ONNX model: "
+                f"{exc}"
             )
 
-            self.model = None
+            self.session = None
             self.is_real = False
 
-            # Release anything partially allocated.
             gc.collect()
-
-    def reload_model(self):
-        """Re-check for the model file and reload it."""
-
-        # Release old model before reloading.
-        self.model = None
-        self.is_real = False
-
-        gc.collect()
-
-        self._try_load_model()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
 
-    def detect(self, image_path: str, save_dir: str) -> dict:
+    def detect(
+        self,
+        image_path: str,
+        save_dir: str,
+    ) -> dict:
         """
-        Run detection on a single image.
+        Run detection.
 
-        Returns:
-            {
-                "engine": "real" | "demo",
-                "is_demo": bool,
-                "detections": list,
-                "annotated_path": str | None,
-                "image_width": int,
-                "image_height": int,
-            }
+        Returns the same general structure expected by the backend:
+            engine
+            is_demo
+            detections
+            annotated_path
+            image_width
+            image_height
         """
 
-        if self.is_real and self.model is not None:
-            return self._real_inference(
-                image_path,
-                save_dir,
-            )
+        if self.is_real and self.session is not None:
+            try:
+                return self._real_inference(
+                    image_path,
+                    save_dir,
+                )
+
+            except Exception as exc:
+                print(
+                    "[DetectorService] Real inference failed: "
+                    f"{exc}"
+                )
+
+                gc.collect()
+
+                # Do NOT silently pretend that a failed real inference
+                # was successful.
+                return {
+                    "engine": "real",
+                    "is_demo": False,
+                    "detections": [],
+                    "annotated_path": None,
+                    "image_width": 0,
+                    "image_height": 0,
+                    "error": str(exc),
+                }
 
         return self._demo_inference(
             image_path,
@@ -170,7 +204,100 @@ class DetectorService:
         )
 
     # ------------------------------------------------------------------
-    # Real YOLO inference
+    # Image preprocessing
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _preprocess_image(
+        image_path: str,
+        image_size: int = 320,
+    ):
+        """
+        Load and preprocess image for YOLO ONNX.
+
+        Returns:
+            tensor, original_width, original_height,
+            resized_width, resized_height
+        """
+
+        with Image.open(image_path) as source:
+            image = source.convert("RGB")
+
+            original_width, original_height = image.size
+
+            # Letterbox resize while preserving aspect ratio.
+            scale = min(
+                image_size / original_width,
+                image_size / original_height,
+            )
+
+            resized_width = max(
+                1,
+                int(round(original_width * scale)),
+            )
+
+            resized_height = max(
+                1,
+                int(round(original_height * scale)),
+            )
+
+            resized = image.resize(
+                (resized_width, resized_height),
+                Image.Resampling.BILINEAR,
+            )
+
+            # Create letterbox canvas.
+            canvas = Image.new(
+                "RGB",
+                (image_size, image_size),
+                (114, 114, 114),
+            )
+
+            pad_x = (image_size - resized_width) // 2
+            pad_y = (image_size - resized_height) // 2
+
+            canvas.paste(
+                resized,
+                (pad_x, pad_y),
+            )
+
+            # Convert to NumPy.
+            array = np.asarray(
+                canvas,
+                dtype=np.float32,
+            )
+
+            # HWC → CHW.
+            array = array.transpose(
+                2,
+                0,
+                1,
+            )
+
+            # Normalize 0–255 → 0–1.
+            array /= 255.0
+
+            # Add batch dimension.
+            tensor = np.expand_dims(
+                array,
+                axis=0,
+            )
+
+            # Explicitly release temporary PIL images.
+            resized.close()
+            canvas.close()
+
+            return (
+                tensor,
+                original_width,
+                original_height,
+                scale,
+                pad_x,
+                pad_y,
+            )
+
+    # ------------------------------------------------------------------
+    # ONNX inference
     # ------------------------------------------------------------------
 
     def _real_inference(
@@ -178,121 +305,56 @@ class DetectorService:
         image_path: str,
         save_dir: str,
     ) -> dict:
-        """Run actual YOLO inference using CPU."""
+        """Run YOLO ONNX inference."""
 
-        results = None
-        result = None
-        img = None
+        input_tensor = None
+        outputs = None
 
         try:
-            # Small inference resolution to reduce RAM usage.
-            results = self.model.predict(
-                source=image_path,
-                conf=self.confidence_threshold,
-                iou=0.45,
-                imgsz=320,
-                max_det=20,
-                device="cpu",
-                half=False,
-                verbose=False,
-                save=False,
+            (
+                input_tensor,
+                img_w,
+                img_h,
+                scale,
+                pad_x,
+                pad_y,
+            ) = self._preprocess_image(
+                image_path,
+                image_size=320,
             )
 
-            result = results[0]
+            # Run ONNX inference.
+            outputs = self.session.run(
+                None,
+                {
+                    self.input_name: input_tensor,
+                },
+            )
 
-            # Read dimensions without keeping a large image in memory.
-            with Image.open(image_path) as opened_img:
-                img_w, img_h = opened_img.size
-
-            detections = []
-
-            if result.boxes is not None:
-                for box in result.boxes:
-
-                    cls_id = int(box.cls[0])
-                    conf = float(box.conf[0])
-
-                    x1, y1, x2, y2 = [
-                        float(c)
-                        for c in box.xyxy[0]
-                    ]
-
-                    class_name = result.names.get(
-                        cls_id,
-                        f"class_{cls_id}",
-                    )
-
-                    label = DAMAGE_CLASSES.get(
-                        class_name,
-                        class_name,
-                    )
-
-                    detections.append(
-                        {
-                            "class": class_name,
-                            "label": label,
-                            "confidence": round(conf, 4),
-                            "bbox": {
-                                "x1": round(x1, 2),
-                                "y1": round(y1, 2),
-                                "x2": round(x2, 2),
-                                "y2": round(y2, 2),
-                            },
-                        }
-                    )
-
-            # Filter weak crack detections.
-            detections = [
-                detection
-                for detection in detections
-                if (
-                    detection["label"] not in CRACK_CLASSES
-                    or detection["confidence"] >= CRACK_MIN_CONFIDENCE
+            if not outputs:
+                raise RuntimeError(
+                    "ONNX model returned no outputs."
                 )
-            ]
+
+            raw_output = outputs[0]
+
+            detections = self._parse_yolo_output(
+                raw_output,
+                img_w,
+                img_h,
+                scale,
+                pad_x,
+                pad_y,
+            )
 
             annotated_path = None
 
-            # Only create annotated output when something was detected.
             if detections:
-                try:
-                    annotated_img = result.plot()
-
-                    annotated_pil = Image.fromarray(
-                        annotated_img[..., ::-1]
-                    )
-
-                    os.makedirs(
-                        save_dir,
-                        exist_ok=True,
-                    )
-
-                    filename = (
-                        f"annotated_"
-                        f"{uuid.uuid4().hex[:8]}"
-                        f".jpg"
-                    )
-
-                    annotated_path = str(
-                        Path(save_dir) / filename
-                    )
-
-                    annotated_pil.save(
-                        annotated_path,
-                        quality=85,
-                        optimize=True,
-                    )
-
-                    # Explicitly release annotation image.
-                    annotated_pil.close()
-                    del annotated_pil
-                    del annotated_img
-
-                except Exception as exc:
-                    print(
-                        "[DetectorService] "
-                        f"Annotation failed: {exc}"
-                    )
+                annotated_path = self._create_annotation(
+                    image_path,
+                    detections,
+                    save_dir,
+                )
 
             return {
                 "engine": "real",
@@ -304,12 +366,295 @@ class DetectorService:
             }
 
         finally:
-            # Release inference result objects.
-            results = None
-            result = None
-            img = None
+            # Release NumPy inference arrays.
+            input_tensor = None
+            outputs = None
 
             gc.collect()
+
+    # ------------------------------------------------------------------
+    # YOLO output parsing
+    # ------------------------------------------------------------------
+
+    def _parse_yolo_output(
+        self,
+        output,
+        original_width,
+        original_height,
+        scale,
+        pad_x,
+        pad_y,
+    ):
+        """
+        Parse Ultralytics YOLO detection output.
+
+        Exported model output is generally:
+            [1, 4 + num_classes, num_predictions]
+
+        For this RoadRakshak model:
+            [1, 8, 2100]
+
+        The first four values are:
+            cx, cy, width, height
+
+        Remaining values are class scores.
+        """
+
+        array = np.asarray(
+            output,
+            dtype=np.float32,
+        )
+
+        # Remove batch dimension.
+        if array.ndim == 3:
+            array = array[0]
+
+        # Handle either:
+        #   [8, 2100]
+        # or
+        #   [2100, 8]
+        if array.ndim != 2:
+            raise RuntimeError(
+                f"Unexpected ONNX output shape: {array.shape}"
+            )
+
+        if array.shape[0] < array.shape[1]:
+            predictions = array.T
+        else:
+            predictions = array
+
+        detections = []
+
+        for prediction in predictions:
+
+            if len(prediction) < 5:
+                continue
+
+            cx = float(prediction[0])
+            cy = float(prediction[1])
+            width = float(prediction[2])
+            height = float(prediction[3])
+
+            class_scores = prediction[4:]
+
+            if len(class_scores) == 0:
+                continue
+
+            class_id = int(
+                np.argmax(class_scores)
+            )
+
+            confidence = float(
+                class_scores[class_id]
+            )
+
+            if confidence < self.confidence_threshold:
+                continue
+
+            # Convert letterboxed coordinates back to original image.
+            x1 = (cx - width / 2 - pad_x) / scale
+            y1 = (cy - height / 2 - pad_y) / scale
+            x2 = (cx + width / 2 - pad_x) / scale
+            y2 = (cy + height / 2 - pad_y) / scale
+
+            # Clamp coordinates.
+            x1 = max(
+                0.0,
+                min(float(original_width), x1),
+            )
+
+            y1 = max(
+                0.0,
+                min(float(original_height), y1),
+            )
+
+            x2 = max(
+                0.0,
+                min(float(original_width), x2),
+            )
+
+            y2 = max(
+                0.0,
+                min(float(original_height), y2),
+            )
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            class_name = self._class_name(
+                class_id
+            )
+
+            label = DAMAGE_CLASSES.get(
+                class_name,
+                class_name,
+            )
+
+            detections.append(
+                {
+                    "class": class_name,
+                    "label": label,
+                    "confidence": round(
+                        confidence,
+                        4,
+                    ),
+                    "bbox": {
+                        "x1": round(x1, 2),
+                        "y1": round(y1, 2),
+                        "x2": round(x2, 2),
+                        "y2": round(y2, 2),
+                    },
+                }
+            )
+
+        # Apply confidence filtering for crack classes.
+        detections = [
+            detection
+            for detection in detections
+            if (
+                detection["label"] not in CRACK_CLASSES
+                or detection["confidence"]
+                >= CRACK_MIN_CONFIDENCE
+            )
+        ]
+
+        # Keep only the strongest detections.
+        detections.sort(
+            key=lambda detection: detection["confidence"],
+            reverse=True,
+        )
+
+        return detections[:20]
+
+    # ------------------------------------------------------------------
+    # Class-name handling
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _class_name(class_id: int) -> str:
+        """
+        Convert model class index to the project's class name.
+
+        Expected model classes:
+            0 = D00
+            1 = D10
+            2 = D20
+            3 = D40
+
+        If the model contains additional classes, return class_N.
+        """
+
+        class_ids = [
+            "D00",
+            "D10",
+            "D20",
+            "D40",
+        ]
+
+        if 0 <= class_id < len(class_ids):
+            return class_ids[class_id]
+
+        return f"class_{class_id}"
+
+    # ------------------------------------------------------------------
+    # Annotation
+    # ------------------------------------------------------------------
+
+    def _create_annotation(
+        self,
+        image_path: str,
+        detections: list,
+        save_dir: str,
+    ):
+        """Create an annotated image."""
+
+        try:
+            os.makedirs(
+                save_dir,
+                exist_ok=True,
+            )
+
+            with Image.open(image_path) as source:
+                image = source.convert("RGB")
+
+                draw = ImageDraw.Draw(image)
+
+                for detection in detections:
+                    bbox = detection["bbox"]
+
+                    label = (
+                        f"{detection['label']} "
+                        f"{detection['confidence']:.0%}"
+                    )
+
+                    x1 = bbox["x1"]
+                    y1 = bbox["y1"]
+                    x2 = bbox["x2"]
+                    y2 = bbox["y2"]
+
+                    draw.rectangle(
+                        [x1, y1, x2, y2],
+                        outline="#FF4444",
+                        width=3,
+                    )
+
+                    try:
+                        font = ImageFont.truetype(
+                            "arial.ttf",
+                            16,
+                        )
+                    except OSError:
+                        font = ImageFont.load_default()
+
+                    text_y = max(
+                        0,
+                        y1 - 20,
+                    )
+
+                    text_bbox = draw.textbbox(
+                        (x1, text_y),
+                        label,
+                        font=font,
+                    )
+
+                    draw.rectangle(
+                        text_bbox,
+                        fill="#FF4444",
+                    )
+
+                    draw.text(
+                        (x1, text_y),
+                        label,
+                        fill="white",
+                        font=font,
+                    )
+
+                filename = (
+                    f"annotated_"
+                    f"{uuid.uuid4().hex[:8]}"
+                    f".jpg"
+                )
+
+                output_path = str(
+                    Path(save_dir) / filename
+                )
+
+                image.save(
+                    output_path,
+                    format="JPEG",
+                    quality=85,
+                    optimize=True,
+                )
+
+                return output_path
+
+        except Exception as exc:
+            print(
+                "[DetectorService] "
+                f"Annotation failed: {exc}"
+            )
+
+            return None
 
     # ------------------------------------------------------------------
     # Demo fallback
@@ -320,20 +665,22 @@ class DetectorService:
         image_path: str,
         save_dir: str,
     ) -> dict:
-        """
-        Generate simulated detections for development/demo purposes.
+        """Generate clearly-labelled demo detections."""
 
-        Every output is tagged with is_demo=True and engine="demo".
-        """
+        with Image.open(image_path) as source:
+            image = source.convert("RGB")
 
-        with Image.open(image_path) as opened_img:
-            img = opened_img.convert("RGB")
-            img_w, img_h = img.size
+            img_w, img_h = image.size
 
-            num_detections = random.randint(1, 3)
+            num_detections = random.randint(
+                1,
+                3,
+            )
+
             detections = []
 
             for _ in range(num_detections):
+
                 damage_type = random.choice(
                     DEMO_DAMAGE_TYPES
                 )
@@ -384,23 +731,21 @@ class DetectorService:
             annotated_path = None
 
             try:
-                draw_img = img.copy()
-                draw = ImageDraw.Draw(draw_img)
+                draw_image = image.copy()
+                draw = ImageDraw.Draw(
+                    draw_image
+                )
 
-                colors = {
-                    "Pothole": "#FF4444",
-                    "Longitudinal Crack": "#FF8800",
-                    "Transverse Crack": "#FFCC00",
-                    "Alligator Crack": "#FF6600",
-                }
+                try:
+                    font = ImageFont.truetype(
+                        "arial.ttf",
+                        16,
+                    )
+                except OSError:
+                    font = ImageFont.load_default()
 
                 for detection in detections:
                     bbox = detection["bbox"]
-
-                    color = colors.get(
-                        detection["label"],
-                        "#FF4444",
-                    )
 
                     draw.rectangle(
                         [
@@ -409,62 +754,28 @@ class DetectorService:
                             bbox["x2"],
                             bbox["y2"],
                         ],
-                        outline=color,
+                        outline="#FF4444",
                         width=3,
                     )
 
-                    label_text = (
+                    label = (
                         f"[DEMO] "
                         f"{detection['label']} "
                         f"{detection['confidence']:.0%}"
                     )
 
-                    try:
-                        font = ImageFont.truetype(
-                            "arial.ttf",
-                            16,
-                        )
-                    except OSError:
-                        font = ImageFont.load_default()
-
-                    text_bbox = draw.textbbox(
-                        (
-                            bbox["x1"],
-                            max(bbox["y1"] - 20, 0),
-                        ),
-                        label_text,
-                        font=font,
-                    )
-
-                    draw.rectangle(
-                        text_bbox,
-                        fill=color,
-                    )
-
                     draw.text(
                         (
                             bbox["x1"],
-                            max(bbox["y1"] - 20, 0),
+                            max(
+                                0,
+                                bbox["y1"] - 20,
+                            ),
                         ),
-                        label_text,
-                        fill="white",
+                        label,
+                        fill="#FF4444",
                         font=font,
                     )
-
-                try:
-                    watermark_font = ImageFont.truetype(
-                        "arial.ttf",
-                        28,
-                    )
-                except OSError:
-                    watermark_font = ImageFont.load_default()
-
-                draw.text(
-                    (10, 10),
-                    "DEMO MODE — Simulated Results",
-                    fill="#FF0000",
-                    font=watermark_font,
-                )
 
                 os.makedirs(
                     save_dir,
@@ -472,7 +783,7 @@ class DetectorService:
                 )
 
                 filename = (
-                    f"demo_annotated_"
+                    f"demo_"
                     f"{uuid.uuid4().hex[:8]}"
                     f".jpg"
                 )
@@ -481,13 +792,14 @@ class DetectorService:
                     Path(save_dir) / filename
                 )
 
-                draw_img.save(
+                draw_image.save(
                     annotated_path,
+                    format="JPEG",
                     quality=85,
                     optimize=True,
                 )
 
-                draw_img.close()
+                draw_image.close()
 
             except Exception as exc:
                 print(
