@@ -118,12 +118,14 @@ class DetectorService:
     def _real_inference(self, image_path: str, save_dir: str) -> dict:
         """Run actual YOLO inference."""
         results = self.model.predict(
-            source=image_path,
-            conf=self.confidence_threshold,
-            iou=0.45,
-            save=False,
-            verbose=False,
-        )
+    source=image_path,
+    conf=self.confidence_threshold,
+    iou=0.45,
+    imgsz=416,
+    device="cpu",
+    save=False,
+    verbose=False,
+)
 
         result = results[0]
         img = Image.open(image_path)
