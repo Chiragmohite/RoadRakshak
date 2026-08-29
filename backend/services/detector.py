@@ -475,152 +475,155 @@ class DetectorService:
     # YOLO output parsing
     # ------------------------------------------------------------------
 
-def _parse_yolo_output(
-    self,
-    output,
-    original_width,
-    original_height,
-    scale,
-    pad_x,
-    pad_y,
-):
-    """
-    Parse YOLO ONNX output.
+    def _parse_yolo_output(
+        self,
+        output,
+        original_width,
+        original_height,
+        scale,
+        pad_x,
+        pad_y,
+    ):
+        """
+        Parse Ultralytics YOLO detection output.
 
-    Expected output:
-        [1, 8, 2100]
+        Exported model output is generally:
+            [1, 4 + num_classes, num_predictions]
 
-    Format:
-        4 box values + 4 class scores
+        For this RoadRakshak model:
+            [1, 8, 2100]
 
-    Classes:
-        0 = D00
-        1 = D10
-        2 = D20
-        3 = D40
-    """
+        The first four values are:
+            cx, cy, width, height
 
-    array = np.asarray(output, dtype=np.float32)
+        Remaining values are class scores.
+        """
 
-    # Remove batch dimension
-    if array.ndim == 3:
-        array = array[0]
-
-    if array.ndim != 2:
-        raise RuntimeError(
-            f"Unexpected ONNX output shape: {array.shape}"
+        array = np.asarray(
+            output,
+            dtype=np.float32,
         )
 
-    # [8, 2100] -> [2100, 8]
-    if array.shape[0] < array.shape[1]:
-        predictions = array.T
-    else:
-        predictions = array
+        # Remove batch dimension.
+        if array.ndim == 3:
+            array = array[0]
 
-    detections = []
-
-    for prediction in predictions:
-
-        if len(prediction) < 8:
-            continue
-
-        # ----------------------------------------------------------
-        # Bounding box
-        # ----------------------------------------------------------
-
-        cx = float(prediction[0])
-        cy = float(prediction[1])
-        width = float(prediction[2])
-        height = float(prediction[3])
-
-        # ----------------------------------------------------------
-        # Class scores
-        # ----------------------------------------------------------
-
-        class_scores = prediction[4:8]
-
-        class_id = int(np.argmax(class_scores))
-        confidence = float(class_scores[class_id])
-
-        # Debug
-        if confidence > 0.001:
-            print(
-                "[DetectorService] Candidate:",
-                "class =", self._class_name(class_id),
-                "confidence =", round(confidence, 6),
+        # Handle either:
+        #   [8, 2100]
+        # or
+        #   [2100, 8]
+        if array.ndim != 2:
+            raise RuntimeError(
+                f"Unexpected ONNX output shape: {array.shape}"
             )
 
-        # Confidence filtering
-        if confidence < self.confidence_threshold:
-            continue
+        if array.shape[0] < array.shape[1]:
+            predictions = array.T
+        else:
+            predictions = array
 
-        # ----------------------------------------------------------
-        # Convert letterbox coordinates back to original image
-        # ----------------------------------------------------------
+        detections = []
 
-        x1 = (cx - width / 2 - pad_x) / scale
-        y1 = (cy - height / 2 - pad_y) / scale
+        for prediction in predictions:
 
-        x2 = (cx + width / 2 - pad_x) / scale
-        y2 = (cy + height / 2 - pad_y) / scale
+            if len(prediction) < 5:
+                continue
 
-        # Clamp
-        x1 = max(0.0, min(float(original_width), x1))
-        y1 = max(0.0, min(float(original_height), y1))
-        x2 = max(0.0, min(float(original_width), x2))
-        y2 = max(0.0, min(float(original_height), y2))
+            cx = float(prediction[0])
+            cy = float(prediction[1])
+            width = float(prediction[2])
+            height = float(prediction[3])
 
-        if x2 <= x1 or y2 <= y1:
-            continue
+            class_scores = prediction[4:]
 
-        class_name = self._class_name(class_id)
+            if len(class_scores) == 0:
+                continue
 
-        label = DAMAGE_CLASSES.get(
-            class_name,
-            class_name,
+            class_id = int(
+                np.argmax(class_scores)
+            )
+
+            confidence = float(
+                class_scores[class_id]
+            )
+
+            if confidence < self.confidence_threshold:
+                continue
+
+            # Convert letterboxed coordinates back to original image.
+            x1 = (cx - width / 2 - pad_x) / scale
+            y1 = (cy - height / 2 - pad_y) / scale
+            x2 = (cx + width / 2 - pad_x) / scale
+            y2 = (cy + height / 2 - pad_y) / scale
+
+            # Clamp coordinates.
+            x1 = max(
+                0.0,
+                min(float(original_width), x1),
+            )
+
+            y1 = max(
+                0.0,
+                min(float(original_height), y1),
+            )
+
+            x2 = max(
+                0.0,
+                min(float(original_width), x2),
+            )
+
+            y2 = max(
+                0.0,
+                min(float(original_height), y2),
+            )
+
+            if x2 <= x1 or y2 <= y1:
+                continue
+
+            class_name = self._class_name(
+                class_id
+            )
+
+            label = DAMAGE_CLASSES.get(
+                class_name,
+                class_name,
+            )
+
+            detections.append(
+                {
+                    "class": class_name,
+                    "label": label,
+                    "confidence": round(
+                        confidence,
+                        4,
+                    ),
+                    "bbox": {
+                        "x1": round(x1, 2),
+                        "y1": round(y1, 2),
+                        "x2": round(x2, 2),
+                        "y2": round(y2, 2),
+                    },
+                }
+            )
+
+        # Apply confidence filtering for crack classes.
+        detections = [
+            detection
+            for detection in detections
+            if (
+                detection["label"] not in CRACK_CLASSES
+                or detection["confidence"]
+                >= CRACK_MIN_CONFIDENCE
+            )
+        ]
+
+        # Keep only the strongest detections.
+        detections.sort(
+            key=lambda detection: detection["confidence"],
+            reverse=True,
         )
 
-        detections.append(
-            {
-                "class": class_name,
-                "label": label,
-                "confidence": round(confidence, 4),
-                "bbox": {
-                    "x1": round(x1, 2),
-                    "y1": round(y1, 2),
-                    "x2": round(x2, 2),
-                    "y2": round(y2, 2),
-                },
-            }
-        )
-
-    # --------------------------------------------------------------
-    # Crack confidence filtering
-    # --------------------------------------------------------------
-
-    detections = [
-        detection
-        for detection in detections
-        if (
-            detection["label"] not in CRACK_CLASSES
-            or detection["confidence"] >= CRACK_MIN_CONFIDENCE
-        )
-    ]
-
-    # --------------------------------------------------------------
-    # Sort strongest first
-    # --------------------------------------------------------------
-
-    detections.sort(
-        key=lambda detection: detection["confidence"],
-        reverse=True,
-    )
-
-    # --------------------------------------------------------------
-    # Keep strongest detections
-    # --------------------------------------------------------------
-
-    return detections[:20]
+        return detections[:20]
 
     # ------------------------------------------------------------------
     # Class-name handling
