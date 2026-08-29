@@ -43,7 +43,7 @@ class Config:
 
     # AI Model
     MODEL_PATH = str(BASE_DIR / "models" / "best.onnx")
-    DETECTION_CONFIDENCE_THRESHOLD = 0.15
+    DETECTION_CONFIDENCE_THRESHOLD = 0.05
 
     # Duplicate clustering
     CLUSTER_RADIUS_METERS = 50
