@@ -37,11 +37,6 @@ export default function LoginPage() {
     }
   };
 
-  const handleQuickFill = (u, p) => {
-    setUsername(u);
-    setPassword(p);
-  };
-
   return (
     <div className="auth-page">
       <div
@@ -127,7 +122,7 @@ export default function LoginPage() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              placeholder="e.g. chirag_citizen or warden_rajesh"
+              placeholder="Enter your username"
               style={{
                 height: '54px',
                 fontSize: '0.96rem',
@@ -170,73 +165,13 @@ export default function LoginPage() {
           </button>
         </form>
 
-        {/* Demo Accounts */}
-        <div
-          style={{
-            marginTop: '30px',
-            paddingTop: '24px',
-            borderTop: '1px solid #EDF2F7',
-            textAlign: 'center',
-          }}
-        >
-          <div
-            style={{
-              fontSize: '0.72rem',
-              color: '#64748B',
-              marginBottom: '12px',
-              textTransform: 'uppercase',
-              letterSpacing: '0.7px',
-              fontWeight: 700,
-            }}
-          >
-            Demo Preset Accounts
-          </div>
-
-          <div
-            style={{
-              display: 'flex',
-              gap: '10px',
-              justifyContent: 'center',
-              flexWrap: 'wrap',
-            }}
-          >
-            <button
-              type="button"
-              onClick={() =>
-                handleQuickFill('citizen', 'password123')
-              }
-              className="btn btn-outline btn-sm"
-              style={{
-                height: '40px',
-                padding: '0 16px',
-                fontSize: '0.78rem',
-              }}
-            >
-              Citizen Login
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                handleQuickFill('municipal_admin', 'password123')
-              }
-              className="btn btn-outline btn-sm"
-              style={{
-                height: '40px',
-                padding: '0 16px',
-                fontSize: '0.78rem',
-              }}
-            >
-              Municipal Login
-            </button>
-          </div>
-        </div>
-
         {/* Register */}
         <div
           style={{
             textAlign: 'center',
-            marginTop: '26px',
+            marginTop: '30px',
+            paddingTop: '24px',
+            borderTop: '1px solid #EDF2F7',
             fontSize: '0.9rem',
             color: '#64748B',
           }}
