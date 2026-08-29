@@ -323,13 +323,38 @@ class DetectorService:
                 image_size=320,
             )
 
-            # Run ONNX inference.
+                        # Run ONNX inference.
             outputs = self.session.run(
                 None,
                 {
                     self.input_name: input_tensor,
                 },
             )
+
+            # ONNX DEBUG
+            print("========== ONNX DEBUG ==========")
+            print("Input name:", self.input_name)
+            print("Input shape:", self.input_shape)
+            print("Number of outputs:", len(outputs))
+
+            for i, output in enumerate(outputs):
+                arr = np.asarray(output)
+
+                print(
+                    f"Output {i}:",
+                    "shape =", arr.shape,
+                    "dtype =", arr.dtype,
+                    "min =", float(arr.min()),
+                    "max =", float(arr.max()),
+                )
+
+            print("================================")
+
+            if not outputs:
+                raise RuntimeError(
+                    "ONNX model returned no outputs."
+                )
+            
 
             if not outputs:
                 raise RuntimeError(
