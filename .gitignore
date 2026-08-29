@@ -42,3 +42,5 @@ dataset/
 # OS
 .DS_Store
 Thumbs.db
+backend/database/*.db
+backend/found.txt
