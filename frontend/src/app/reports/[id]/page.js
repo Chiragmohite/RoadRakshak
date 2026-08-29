@@ -35,18 +35,69 @@ export default function ReportDetailPage({ params }) {
   const [activeTab, setActiveTab] = useState('annotated');
   const [hoveredDetIndex, setHoveredDetIndex] = useState(null);
 
-  // Municipal Assignment
   const [assigneeId, setAssigneeId] = useState('');
   const [assignNotes, setAssignNotes] = useState('');
   const [assigning, setAssigning] = useState(false);
   const [assignSuccess, setAssignSuccess] = useState('');
 
-  // Municipal users
   const [municipalUsers, setMunicipalUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
 
-  // Status
   const [statusUpdating, setStatusUpdating] = useState(false);
+
+  /*
+   * IMPORTANT:
+   * Images are stored/served by the Flask backend.
+   * They are NOT served by the Next.js/Vercel frontend.
+   *
+   * In Vercel Environment Variables set:
+   *
+   * NEXT_PUBLIC_API_URL=https://YOUR-BACKEND-URL.onrender.com
+   *
+   * Then redeploy the frontend.
+   */
+  const API_URL = (
+    process.env.NEXT_PUBLIC_API_URL ||
+    process.env.NEXT_PUBLIC_BACKEND_URL ||
+    ''
+  ).replace(/\/$/, '');
+
+  /*
+   * Convert a backend image path into a complete URL.
+   *
+   * Examples:
+   *
+   * image_path = "abc.jpg"
+   * -> https://backend.com/uploads/abc.jpg
+   *
+   * image_path = "uploads/abc.jpg"
+   * -> https://backend.com/uploads/abc.jpg
+   *
+   * image_path = "https://backend.com/uploads/abc.jpg"
+   * -> unchanged
+   */
+  const getImageUrl = (imagePath) => {
+    if (!imagePath) return '';
+
+    // Already an absolute URL
+    if (
+      imagePath.startsWith('http://') ||
+      imagePath.startsWith('https://')
+    ) {
+      return imagePath;
+    }
+
+    // Remove leading slash
+    const cleanPath = imagePath.replace(/^\/+/, '');
+
+    // Already contains uploads/
+    if (cleanPath.startsWith('uploads/')) {
+      return `${API_URL}/${cleanPath}`;
+    }
+
+    // Normal backend upload filename
+    return `${API_URL}/uploads/${cleanPath}`;
+  };
 
   useEffect(() => {
     if (!user) {
@@ -187,6 +238,12 @@ export default function ReportDetailPage({ params }) {
 
   const isMunicipalOrAdmin =
     user?.role === 'municipal' || user?.role === 'admin';
+
+  // IMPORTANT: Build backend image URLs
+  const originalImageUrl = getImageUrl(report.image_path);
+  const annotatedImageUrl = getImageUrl(
+    report.annotated_image_path
+  );
 
   return (
     <div className="container">
@@ -353,15 +410,21 @@ export default function ReportDetailPage({ params }) {
           </div>
 
           <div style={{ marginBottom: '20px' }}>
+
+            {/* AI ANNOTATED IMAGE */}
             {activeTab === 'annotated' &&
             report.annotated_image_path ? (
+
               <DetectionOverlay
-                imageSrc={`/uploads/${report.annotated_image_path}`}
+                imageSrc={annotatedImageUrl}
                 detections={boundingBoxes}
                 hoveredIndex={hoveredDetIndex}
                 onHoverDetection={setHoveredDetIndex}
               />
+
             ) : (
+
+              /* ORIGINAL IMAGE */
               <div
                 style={{
                   position: 'relative',
@@ -371,17 +434,37 @@ export default function ReportDetailPage({ params }) {
                   border: '1px solid var(--border)',
                 }}
               >
-                <img
-                  src={`/uploads/${report.image_path}`}
-                  alt="Road defect raw"
-                  style={{
-                    width: '100%',
-                    maxHeight: '420px',
-                    objectFit: 'contain',
-                    display: 'block',
-                    margin: '0 auto',
-                  }}
-                />
+                {originalImageUrl ? (
+                  <img
+                    src={originalImageUrl}
+                    alt="Road defect raw"
+                    onError={(e) => {
+                      console.error(
+                        'Failed to load original image:',
+                        originalImageUrl
+                      );
+                    }}
+                    style={{
+                      width: '100%',
+                      maxHeight: '420px',
+                      objectFit: 'contain',
+                      display: 'block',
+                      margin: '0 auto',
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      minHeight: '320px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'var(--text-muted)',
+                    }}
+                  >
+                    No original image available
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -870,8 +953,6 @@ export default function ReportDetailPage({ params }) {
                   onSubmit={handleCreateAssignment}
                   style={{ marginBottom: '18px' }}
                 >
-
-                  {/* NEW DROPDOWN */}
                   <div className="form-group">
                     <label htmlFor="assigneeId">
                       DISPATCH FIELD WORKER *
@@ -905,7 +986,6 @@ export default function ReportDetailPage({ params }) {
                     </select>
                   </div>
 
-                  {/* NOTES */}
                   <div className="form-group">
                     <label htmlFor="assignNotes">
                       DISPATCH INSTRUCTIONS / REPAIR PLAN
