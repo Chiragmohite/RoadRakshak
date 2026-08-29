@@ -323,7 +323,7 @@ class DetectorService:
                 image_size=320,
             )
 
-                        # Run ONNX inference.
+            # Run ONNX inference.
             outputs = self.session.run(
                 None,
                 {
@@ -331,11 +331,14 @@ class DetectorService:
                 },
             )
 
+            # ----------------------------------------------------------
             # ONNX DEBUG
-            print("========== ONNX DEBUG ==========", flush=True)
-            print("Input name:", self.input_name, flush=True)
-            print("Input shape:", self.input_shape, flush=True)
-            print("Number of outputs:", len(outputs), flush=True)
+            # ----------------------------------------------------------
+
+            print("========== ONNX DEBUG ==========")
+            print("Input name:", self.input_name)
+            print("Input shape:", self.input_shape)
+            print("Number of outputs:", len(outputs))
 
             for i, output in enumerate(outputs):
                 arr = np.asarray(output)
@@ -346,10 +349,82 @@ class DetectorService:
                     "dtype =", arr.dtype,
                     "min =", float(arr.min()),
                     "max =", float(arr.max()),
-                    flush=True,
                 )
 
-            print("================================", flush=True)
+                debug_arr = (
+                    arr[0]
+                    if arr.ndim == 3
+                    else arr
+                )
+
+                if debug_arr.ndim == 2:
+
+                    if debug_arr.shape[0] < debug_arr.shape[1]:
+                        debug_predictions = debug_arr.T
+                    else:
+                        debug_predictions = debug_arr
+
+                    print("Top 10 predictions:")
+
+                    scored = []
+
+                    for prediction in debug_predictions:
+
+                        if len(prediction) >= 8:
+
+                            class_scores = prediction[4:8]
+
+                            class_id = int(
+                                np.argmax(class_scores)
+                            )
+
+                            confidence = float(
+                                class_scores[class_id]
+                            )
+
+                            scored.append(
+                                (
+                                    confidence,
+                                    class_id,
+                                    prediction[0],
+                                    prediction[1],
+                                    prediction[2],
+                                    prediction[3],
+                                    class_scores.tolist(),
+                                )
+                            )
+
+                    scored.sort(
+                        reverse=True,
+                        key=lambda x: x[0],
+                    )
+
+                    for item in scored[:10]:
+
+                        print(
+                            "confidence =",
+                            round(item[0], 4),
+                            "class_id =",
+                            item[1],
+                            "class =",
+                            self._class_name(item[1]),
+                            "bbox =",
+                            [
+                                round(float(v), 2)
+                                for v in item[2:6]
+                            ],
+                            "scores =",
+                            [
+                                round(float(v), 4)
+                                for v in item[6]
+                            ],
+                        )
+
+            print("================================")
+
+            # ----------------------------------------------------------
+            # Validate ONNX output
+            # ----------------------------------------------------------
 
             if not outputs:
                 raise RuntimeError(
@@ -358,7 +433,9 @@ class DetectorService:
 
             raw_output = outputs[0]
 
-            
+            # ----------------------------------------------------------
+            # Parse detections
+            # ----------------------------------------------------------
 
             detections = self._parse_yolo_output(
                 raw_output,
