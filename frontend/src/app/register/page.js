@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { register as apiRegister } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { IconShield, IconAlertTriangle, IconCheckCircle2 } from '@/components/Icons';
+import {
+  IconShield,
+  IconAlertTriangle,
+  IconCheckCircle2,
+} from '@/components/Icons';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -25,6 +29,7 @@ export default function RegisterPage() {
 
     try {
       const data = await apiRegister(username, email, password, role);
+
       loginUser(data.user, data.token);
 
       if (data.user.role === 'municipal' || data.user.role === 'admin') {
@@ -71,8 +76,10 @@ export default function RegisterPage() {
 
         <form onSubmit={handleSubmit}>
 
+          {/* Username */}
           <div className="form-group">
             <label htmlFor="username">Username</label>
+
             <input
               id="username"
               type="text"
@@ -84,8 +91,10 @@ export default function RegisterPage() {
             />
           </div>
 
+          {/* Email */}
           <div className="form-group">
             <label htmlFor="email">Email Address</label>
+
             <input
               id="email"
               type="email"
@@ -96,8 +105,10 @@ export default function RegisterPage() {
             />
           </div>
 
+          {/* Password */}
           <div className="form-group">
             <label htmlFor="password">Password</label>
+
             <input
               id="password"
               type="password"
@@ -107,11 +118,13 @@ export default function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Create a secure password"
             />
+
             <div className="password-hint">
               Minimum 6 characters
             </div>
           </div>
 
+          {/* Account Type */}
           <div className="form-group">
             <label htmlFor="role">Account Type</label>
 
@@ -123,15 +136,18 @@ export default function RegisterPage() {
               <option value="citizen">
                 Citizen — Report & Track Hazards
               </option>
+
               <option value="municipal">
                 Municipal Authority — Inspect & Verify
               </option>
-              <option value="admin">
-                Administrator — Full System Governance
-              </option>
             </select>
+
+            <div className="password-hint">
+              Administrator accounts are provisioned separately.
+            </div>
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
             className="btn btn-primary btn-lg auth-submit"
