@@ -59,7 +59,7 @@ class DetectorService:
     def __init__(
         self,
         model_path: str,
-        confidence_threshold: float = 0.15,
+        confidence_threshold: float = 0.10,
     ):
         self.model_path = model_path
         self.confidence_threshold = confidence_threshold
