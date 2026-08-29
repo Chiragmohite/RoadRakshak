@@ -332,10 +332,10 @@ class DetectorService:
             )
 
             # ONNX DEBUG
-            print("========== ONNX DEBUG ==========")
-            print("Input name:", self.input_name)
-            print("Input shape:", self.input_shape)
-            print("Number of outputs:", len(outputs))
+            print("========== ONNX DEBUG ==========", flush=True)
+            print("Input name:", self.input_name, flush=True)
+            print("Input shape:", self.input_shape, flush=True)
+            print("Number of outputs:", len(outputs), flush=True)
 
             for i, output in enumerate(outputs):
                 arr = np.asarray(output)
@@ -346,15 +346,10 @@ class DetectorService:
                     "dtype =", arr.dtype,
                     "min =", float(arr.min()),
                     "max =", float(arr.max()),
+                    flush=True,
                 )
 
-            print("================================")
-
-            if not outputs:
-                raise RuntimeError(
-                    "ONNX model returned no outputs."
-                )
-            
+            print("================================", flush=True)
 
             if not outputs:
                 raise RuntimeError(
@@ -362,6 +357,8 @@ class DetectorService:
                 )
 
             raw_output = outputs[0]
+
+            
 
             detections = self._parse_yolo_output(
                 raw_output,
