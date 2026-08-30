@@ -30,8 +30,8 @@ def _get_detector() -> DetectorService:
         # Re-check for model if currently in demo mode
         # (allows hot-swapping best.pt without restart)
         if not _detector.is_real:
-            _detector.reload_model()
-    return _detector
+
+            return _detector
 
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
