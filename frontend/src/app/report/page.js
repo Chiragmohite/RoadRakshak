@@ -6,11 +6,13 @@ import { useRouter } from 'next/navigation';
 import { createReport, detectImage } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import DemoBanner from '@/components/DemoBanner';
+
 import {
   EngineBadge,
   PriorityBadge,
   SeverityBadge,
 } from '@/components/StatusBadge';
+
 import DetectionOverlay from '@/components/DetectionOverlay';
 
 import {
@@ -27,6 +29,31 @@ import {
   IconLayers,
   IconRefresh,
 } from '@/components/Icons';
+
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  ''
+).replace(/\/$/, '');
+
+const getImageUrl = (imagePath) => {
+  if (!imagePath) return '';
+
+  if (
+    imagePath.startsWith('http://') ||
+    imagePath.startsWith('https://')
+  ) {
+    return imagePath;
+  }
+
+  const cleanPath = imagePath.replace(/^\/+/, '');
+
+  if (cleanPath.startsWith('uploads/')) {
+    return `${API_URL}/${cleanPath}`;
+  }
+
+  return `${API_URL}/uploads/${cleanPath}`;
+};
 
 export default function ReportPage() {
   const router = useRouter();
