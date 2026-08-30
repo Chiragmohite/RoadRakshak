@@ -7,6 +7,8 @@ annotated-types==0.7.0
 anthropic==0.34.2
 anyio==4.13.0
 attrs==26.1.0
+bcrypt==5.0.0
+blinker==1.9.0
 certifi==2026.5.20
 cffi==2.1.0
 charset-normalizer==3.4.7
@@ -21,10 +23,13 @@ distro==1.9.0
 et_xmlfile==2.0.0
 fastapi==0.115.0
 filelock==3.30.1
+Flask==3.1.3
+Flask-SQLAlchemy==3.1.1
 fonttools==4.63.0
 fpdf2==2.7.9
 frozenlist==1.8.0
 fsspec==2026.6.0
+greenlet==3.5.5
 h11==0.16.0
 hf-xet==1.5.2
 httpcore==1.0.9
@@ -33,8 +38,11 @@ httpx==0.28.1
 huggingface_hub==1.23.0
 idna==3.18
 ImageHash==4.3.2
+itsdangerous==2.2.0
+Jinja2==3.1.6
 jiter==0.16.0
 kiwisolver==1.5.0
+MarkupSafe==3.0.3
 matplotlib==3.11.1
 multidict==6.7.1
 numpy==2.4.6
@@ -45,6 +53,7 @@ pdfminer.six==20231228
 pdfplumber==0.11.4
 pillow==12.2.0
 propcache==0.5.2
+psycopg2-binary==2.9.12
 pycparser==3.0
 pydantic==2.13.4
 pydantic_core==2.46.4
@@ -66,6 +75,7 @@ scipy==1.17.1
 sherlock-project==0.16.0
 six==1.17.0
 sniffio==1.3.1
+SQLAlchemy==2.0.52
 starlette==0.38.6
 stem==1.8.2
 tokenizers==0.23.1
@@ -79,11 +89,7 @@ uv==0.12.5
 uvicorn==0.30.6
 watchfiles==1.2.0
 websockets==16.1
+Werkzeug==3.1.8
 yarl==1.24.5
 youtube-transcript-api==1.2.4
 yt-dlp==2026.7.4
-gunicorn
-Flask==3.0.3
-Flask-Cors==4.0.1
-Flask-SQLAlchemy==3.1.1
-psycopg2-binary==2.9.10
