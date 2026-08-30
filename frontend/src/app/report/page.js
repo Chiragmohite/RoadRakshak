@@ -1590,7 +1590,7 @@ export default function ReportPage() {
                   {detectionResult?.annotated_image_path &&
                   activeViewMode === 'annotated' ? (
                     <DetectionOverlay
-                      imageSrc={`/uploads/${detectionResult.annotated_image_path}`}
+                      imageSrc={getImageUrl(detectionResult.annotated_image_path)}
                       detections={
                         detectionResult.detections
                       }

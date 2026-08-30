@@ -12,6 +12,31 @@ import {
   IconAlertTriangle,
 } from '@/components/Icons';
 
+const API_URL = (
+  process.env.NEXT_PUBLIC_API_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  ''
+).replace(/\/$/, '');
+
+const getImageUrl = (imagePath) => {
+  if (!imagePath) return '';
+
+  if (
+    imagePath.startsWith('http://') ||
+    imagePath.startsWith('https://')
+  ) {
+    return imagePath;
+  }
+
+  const cleanPath = imagePath.replace(/^\/+/, '');
+
+  if (cleanPath.startsWith('uploads/')) {
+    return `${API_URL}/${cleanPath}`;
+  }
+
+  return `${API_URL}/uploads/${cleanPath}`;
+};
+
 export default function ReportsPage() {
   const { user } = useAuth();
 
@@ -218,7 +243,7 @@ export default function ReportsPage() {
                       >
                         {r.image_path ? (
                           <img
-                            src={`/uploads/${r.image_path}`}
+                            src={getImageUrl(r.image_path)}
                             alt="Damage thumbnail"
                             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
                           />
