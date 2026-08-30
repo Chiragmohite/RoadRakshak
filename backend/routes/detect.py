@@ -21,17 +21,14 @@ _detector: DetectorService | None = None
 
 def _get_detector() -> DetectorService:
     global _detector
+
     if _detector is None:
         _detector = DetectorService(
             model_path=current_app.config["MODEL_PATH"],
             confidence_threshold=current_app.config["DETECTION_CONFIDENCE_THRESHOLD"],
         )
-    else:
-        # Re-check for model if currently in demo mode
-        # (allows hot-swapping best.pt without restart)
-        if not _detector.is_real:
 
-            return _detector
+    return _detector
 
 
 ALLOWED_EXTENSIONS = {"png", "jpg", "jpeg", "webp"}
